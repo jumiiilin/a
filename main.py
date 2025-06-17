@@ -52,14 +52,24 @@ y = pd.to_numeric(y, errors='coerce')
 
 mask = (~X.isna().any(axis=1)) & (~y.isna()) & (~np.isinf(X).any(axis=1)) & (~np.isinf(y))
 X_clean = X.loc[mask]
-y_clean = y.loc[mask].values.ravel()
+y_clean = y.loc[mask]
 
-# 상태 출력 (디버깅용)
+# 문제점 진단 출력
+st.write("=== 데이터 상태 진단 ===")
+st.write("X_clean dtypes:\n", X_clean.dtypes)
+st.write("X_clean NaN 존재 여부:", X_clean.isna().any().any())
+st.write("X_clean 무한대 존재 여부:", np.isinf(X_clean).any().any())
 st.write("X_clean shape:", X_clean.shape)
-st.write("X_clean dtypes:", X_clean.dtypes)
-st.write("X_clean sample:\n", X_clean.head())
+st.write("y_clean NaN 존재 여부:", y_clean.isna().any())
+st.write("y_clean 무한대 존재 여부:", np.isinf(y_clean).any())
 st.write("y_clean shape:", y_clean.shape)
-st.write("y_clean sample:", y_clean[:5])
+st.write("y_clean sample:\n", y_clean.head())
+
+# y_clean 1차원 배열로 변환 (필요시)
+if len(y_clean.shape) > 1:
+    y_clean = y_clean.values.ravel()
+else:
+    y_clean = y_clean.values
 
 # 모델 학습
 model = LinearRegression()
