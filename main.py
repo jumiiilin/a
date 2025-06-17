@@ -73,6 +73,16 @@ X = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매�
 y = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' in col]].sum(axis=1)  # 전체 매출합
 
 model = LinearRegression()
+# --- 모델 학습 ---
+X = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' not in col]]
+y = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' in col]].sum(axis=1)
+
+# 결측값 제거
+train_df = pd.concat([X, y], axis=1).dropna()
+X = train_df[X.columns]
+y = train_df[y.name] if hasattr(y, 'name') else train_df.iloc[:, -1]
+
+model = LinearRegression()
 model.fit(X, y)
 
 # --- 예측 ---
