@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+import numpy as np
 
 st.title("서울시 상권 매출 예측 (유동인구 기반)")
 
@@ -65,28 +66,30 @@ df_merge = pd.merge(
     right_on='기준_년분기_코드'
 )
 
-# --- 모델 학습 ---
+# --- 모델 학습 준비 ---
 X = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' not in col]]
 
-# y는 매출 관련 컬럼들의 합계로 Series 생성 후 name 부여
 y = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' in col]].sum(axis=1)
 y.name = 'total_sales'  # 이름 부여
 
-# 결측값 제거
-train_df = pd.concat([X, y], axis=1).dropna()
-X = train_df[X.columns]
-y = train_df[y.name]  # 안전하게 name으로 접근
+# 결측치, 무한대 제거
+mask = (~X.isna().any(axis=1)) & (~y.isna()) & (~np.isinf(X).any(axis=1)) & (~np.isinf(y))
+X_clean = X.loc[mask]
+y_clean = y.loc[mask]
+
+# y를 1차원 배열로 변환
+y_clean = y_clean.values.ravel()
 
 model = LinearRegression()
-model.fit(X, y)
+model.fit(X_clean, y_clean)
 
 # --- 예측 ---
-preds = model.predict(X)
+preds = model.predict(X_clean)
 
 # --- 시각화 ---
 fig, ax = plt.subplots(figsize=(8, 4))
 ax.plot(df_merge['분기'], y, marker='o', label='실제 매출')
-ax.plot(df_merge['분기'], preds, marker='x', label='예측 매출')
+ax.plot(df_merge['분기'].loc[mask], preds, marker='x', label='예측 매출')
 ax.set_title('분기별 실제 vs 예측 매출')
 ax.set_xlabel('분기')
 ax.set_ylabel('총 매출')
@@ -95,5 +98,5 @@ ax.grid(True)
 st.pyplot(fig)
 
 # --- 상관계수 출력 ---
-correlation = pd.Series(preds).corr(y)
+correlation = pd.Series(preds).corr(y_clean)
 st.write(f"### 예측값과 실제 매출의 상관계수: `{correlation:.4f}`")
