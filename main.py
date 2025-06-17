@@ -14,82 +14,52 @@ def load_data():
 
 df_sales, df_subway = load_data()
 
-# --- 유동인구 데이터 전처리 ---
-def preprocess_subway(df):
-    df['날짜'] = pd.to_datetime(df['날짜'])
-    df['분기'] = df['날짜'].dt.to_period('Q')
+# 유동인구 전처리 간단히
+df_subway['날짜'] = pd.to_datetime(df_subway['날짜'])
+df_subway['분기'] = df_subway['날짜'].dt.to_period('Q').astype(str)
 
-    time_groups = {
-        "00~06": ["06시 이전"],
-        "06~11": ["06시-07시", "07시-08시", "08시-09시", "09시-10시", "10시-11시"],
-        "11~14": ["11시-12시", "12시-13시", "13시-14시"],
-        "14~17": ["14시-15시", "15시-16시", "16시-17시"],
-        "17~21": ["17시-18시", "18시-19시", "19시-20시", "20시-21시"],
-        "21~24": ["21시-22시", "22시-23시", "23시-24시"]
-    }
+# 필요한 시간대 합계 계산 (예시)
+time_cols = [col for col in df_subway.columns if '시간대_' in col]
+if not time_cols:
+    st.error("유동인구 데이터에 시간대 컬럼이 없습니다.")
+    st.stop()
 
-    df_total = df[df['구분'].isin(['승차', '하차'])].copy()
-    for k, v in time_groups.items():
-        df_total[f"시간대_{k}"] = df_total[v].sum(axis=1)
+df_subway_quarter = df_subway.groupby('분기')[time_cols].sum().reset_index()
 
-    df_total_grouped = df_total.groupby('분기')[
-        [f"시간대_{k}" for k in time_groups.keys()]
-    ].sum().reset_index()
-    return df_total_grouped
+# 매출 데이터 전처리
+df_sales['기준_년분기_코드'] = df_sales['기준_년분기_코드'].astype(str)
+sales_cols = [col for col in df_sales.columns if '시간대_' in col and '매출_금액' in col]
+if not sales_cols:
+    st.error("매출 데이터에 시간대 매출 컬럼이 없습니다.")
+    st.stop()
 
-# --- 매출 데이터 전처리 ---
-def preprocess_sales(df):
-    df_grouped = df.groupby('기준_년분기_코드')[
-        [col for col in df.columns if '시간대_' in col and '매출_금액' in col]
-    ].mean(numeric_only=True).reset_index()
-    return df_grouped
+df_sales_quarter = df_sales.groupby('기준_년분기_코드')[sales_cols].mean().reset_index()
 
-# --- 전처리 실행 ---
-df_traffic_quarter = preprocess_subway(df_subway)
-df_sales_quarter = preprocess_sales(df_sales)
+# 병합
+df_merge = pd.merge(df_subway_quarter, df_sales_quarter,
+                    left_on='분기', right_on='기준_년분기_코드')
 
-# 분기 이름 정리
-quarter_map = {
-    "2024Q1": "2024년 1분기",
-    "2024Q2": "2024년 2분기",
-    "2024Q3": "2024년 3분기",
-    "2024Q4": "2024년 4분기"
-}
-df_traffic_quarter['분기'] = df_traffic_quarter['분기'].astype(str)
-df_sales_quarter['기준_년분기_코드'] = df_sales_quarter['기준_년분기_코드'].astype(str)
-
-# --- 데이터 병합 ---
-df_merge = pd.merge(
-    df_traffic_quarter,
-    df_sales_quarter,
-    left_on='분기',
-    right_on='기준_년분기_코드'
-)
-
-# --- 모델 학습 준비 ---
-X = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' not in col]]
-
-y = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' in col]].sum(axis=1)
-y.name = 'total_sales'  # 이름 부여
+# 설명 변수와 목표 변수 선택
+X = df_merge[time_cols]
+y = df_merge[sales_cols].sum(axis=1)
+y.name = 'total_sales'
 
 # 결측치, 무한대 제거
 mask = (~X.isna().any(axis=1)) & (~y.isna()) & (~np.isinf(X).any(axis=1)) & (~np.isinf(y))
 X_clean = X.loc[mask]
-y_clean = y.loc[mask]
+y_clean = y.loc[mask].values.ravel()
 
-# y를 1차원 배열로 변환
-y_clean = y_clean.values.ravel()
-
+# 모델 학습
 model = LinearRegression()
 model.fit(X_clean, y_clean)
 
-# --- 예측 ---
+# 예측
 preds = model.predict(X_clean)
 
-# --- 시각화 ---
+# 시각화
 fig, ax = plt.subplots(figsize=(8, 4))
-ax.plot(df_merge['분기'], y, marker='o', label='실제 매출')
-ax.plot(df_merge['분기'].loc[mask], preds, marker='x', label='예측 매출')
+ax.plot(df_merge.loc[mask, '분기'], y_clean, marker='o', label='실제 매출')
+ax.plot(df_merge.loc[mask, '분기'], preds, marker='x', label='예측 매출')
 ax.set_title('분기별 실제 vs 예측 매출')
 ax.set_xlabel('분기')
 ax.set_ylabel('총 매출')
@@ -97,6 +67,6 @@ ax.legend()
 ax.grid(True)
 st.pyplot(fig)
 
-# --- 상관계수 출력 ---
-correlation = pd.Series(preds).corr(y_clean)
+# 상관계수
+correlation = pd.Series(preds).corr(pd.Series(y_clean))
 st.write(f"### 예측값과 실제 매출의 상관계수: `{correlation:.4f}`")
