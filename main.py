@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-import os
 
 st.title("서울시 상권 매출 예측 (유동인구 기반)")
 
@@ -16,11 +15,9 @@ df_sales, df_subway = load_data()
 
 # --- 유동인구 데이터 전처리 ---
 def preprocess_subway(df):
-    # 날짜에서 분기 추출
     df['날짜'] = pd.to_datetime(df['날짜'])
     df['분기'] = df['날짜'].dt.to_period('Q')
 
-    # 시간대 통합
     time_groups = {
         "00~06": ["06시 이전"],
         "06~11": ["06시-07시", "07시-08시", "08시-09시", "09시-10시", "10시-11시"],
@@ -70,17 +67,15 @@ df_merge = pd.merge(
 
 # --- 모델 학습 ---
 X = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' not in col]]
-y = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' in col]].sum(axis=1)  # 전체 매출합
 
-model = LinearRegression()
-# --- 모델 학습 ---
-X = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' not in col]]
+# y는 매출 관련 컬럼들의 합계로 Series 생성 후 name 부여
 y = df_merge[[col for col in df_merge.columns if '시간대_' in col and '_매출_금액' in col]].sum(axis=1)
+y.name = 'total_sales'  # 이름 부여
 
 # 결측값 제거
 train_df = pd.concat([X, y], axis=1).dropna()
 X = train_df[X.columns]
-y = train_df[y.name] if hasattr(y, 'name') else train_df.iloc[:, -1]
+y = train_df[y.name]  # 안전하게 name으로 접근
 
 model = LinearRegression()
 model.fit(X, y)
